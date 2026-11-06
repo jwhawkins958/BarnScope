@@ -1,0 +1,941 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080c0a">
+  <title>BarnScope · Live optic</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --night: #080c0a;
+      --panel: #111813;
+      --panel-raised: #1a241d;
+      --line: #65745b;
+      --ink: #e4e8d6;
+      --muted: #a1ab91;
+      --hud: #e5bd63;
+      --alert: #ff7669;
+      --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      overflow: hidden;
+      background: var(--night);
+      color: var(--ink);
+      font-family: var(--mono);
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, a:focus-visible {
+      outline: 2px solid var(--hud);
+      outline-offset: 3px;
+    }
+    .optic {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: var(--night);
+    }
+    .canvas-wrap {
+      position: relative;
+      width: min(100vw, calc(100dvh * 16 / 9));
+      height: min(100dvh, calc(100vw * 9 / 16));
+      aspect-ratio: 16 / 9;
+      flex: none;
+      overflow: hidden;
+      background: #050706;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+    .menu-trigger {
+      position: fixed;
+      z-index: 5;
+      top: max(14px, env(safe-area-inset-top));
+      right: max(14px, env(safe-area-inset-right));
+      min-width: 84px;
+      min-height: 46px;
+      padding: 0 17px;
+      border: 1px solid #c3c39a70;
+      border-radius: 3px;
+      background: #111811e8;
+      color: #e4e3c7;
+      font-size: 12px;
+      letter-spacing: .16em;
+      cursor: pointer;
+      touch-action: manipulation;
+      box-shadow: 0 4px 24px #0008;
+    }
+    .menu-trigger:hover { background: #273228; }
+    /* Final optic view has no persistent controls; keyboard focus reveals access. */
+    .menu-trigger:not(:focus-visible) { opacity: 0; pointer-events: none; }
+    .alert {
+      position: fixed;
+      z-index: 4;
+      left: 50%;
+      top: 50%;
+      width: min(460px, calc(100vw - 32px));
+      transform: translate(-50%, -50%);
+      padding: 21px 22px 19px;
+      border: 1px solid #df796b8a;
+      background: #170e0deF;
+      color: #f0d7d0;
+      box-shadow: 0 15px 60px #000b;
+    }
+    .alert[hidden] { display: none; }
+    .alert-kicker, .section-kicker {
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+    .alert-kicker { color: #ff9b8d; }
+    .alert h1 { margin: 9px 0 7px; font-size: 19px; font-weight: 600; letter-spacing: .08em; }
+    .alert p { margin: 0; color: #c5b9ae; font: 12px/1.6 var(--mono); }
+    .alert button {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 44px;
+      height: 44px;
+      border: 0;
+      background: transparent;
+      color: #d9c5bc;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .scrim {
+      position: fixed;
+      z-index: 10;
+      inset: 0;
+      display: flex;
+      justify-content: flex-end;
+      background: #0009;
+      animation: fade-in .16s ease-out both;
+    }
+    .scrim[hidden] { display: none; }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      width: min(480px, 100vw);
+      height: 100%;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      border-left: 1px solid #aab18a40;
+      background: #111813;
+      box-shadow: -20px 0 80px #0008;
+      animation: panel-in .2s ease-out both;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 76px;
+      padding: 12px 21px;
+      border-bottom: 1px solid #94a08130;
+    }
+    .panel-head h2 {
+      margin: 5px 0 0;
+      color: #e9e9d7;
+      font-size: 21px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .close-button {
+      width: 46px;
+      height: 46px;
+      border: 1px solid #9eaa843f;
+      border-radius: 50%;
+      background: transparent;
+      color: #e1e3cf;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .panel-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 20px 21px 28px; }
+    .menu-section + .menu-section { margin-top: 27px; padding-top: 22px; border-top: 1px solid #94a08130; }
+    .section-kicker { margin: 0 0 13px; }
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .action, .choice {
+      min-height: 48px;
+      border: 1px solid #929e7938;
+      border-radius: 3px;
+      background: #18211b;
+      color: #e1e4d0;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: background .14s ease, border-color .14s ease;
+    }
+    .action:hover, .choice:hover { background: #28342b; border-color: #b7bd8b80; }
+    .action:disabled { opacity: .42; cursor: not-allowed; }
+    .action.recording { border-color: #ff756c8c; color: #ffa69b; }
+    .action-icon { margin-right: 8px; color: var(--hud); }
+    .fine-print { margin: 11px 0 0; color: #adb49e; font-size: 11px; line-height: 1.6; }
+    .notice {
+      margin: 12px 0 0;
+      padding: 10px 11px;
+      border: 1px solid #aeb48b3a;
+      background: #20291f;
+      color: #c8cbb5;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .notice[hidden] { display: none; }
+    .notice.error { border-color: #c9695c70; background: #2a1715; color: #f1c1b8; }
+    fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+    fieldset + fieldset, .setting-row + .setting-row { margin-top: 20px; }
+    legend, .setting-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      margin: 0 0 9px;
+      color: #aeb69a;
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .choices.reticles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .choice { min-height: 44px; padding: 5px 7px; font-size: 11px; }
+    .choice[aria-pressed="true"] { border-color: var(--hud); background: #393321; color: #f0d58e; }
+    .color-choices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+    .color-choice { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; }
+    .swatch { width: 13px; height: 13px; border: 1px solid #f5f3da88; border-radius: 50%; }
+    .setting-row { display: flex; align-items: center; justify-content: space-between; min-height: 44px; color: #d4d8c6; font-size: 12px; }
+    fieldset.setting-row { display: block; }
+    .switch { position: relative; width: 46px; height: 26px; }
+    .switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+    .switch-track { position: absolute; inset: 3px 0; border: 1px solid #859078; border-radius: 20px; background: #283128; pointer-events: none; }
+    .switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #aab29c; transition: transform .15s ease; }
+    .switch input:checked + .switch-track { border-color: #b8b47b; background: #4b472c; }
+    .switch input:checked + .switch-track::after { transform: translateX(19px); background: #e3c46f; }
+    .switch input:focus-visible + .switch-track { outline: 2px solid var(--hud); outline-offset: 3px; }
+    input[type="range"] { width: 100%; height: 32px; margin: 0; accent-color: #d9bd69; cursor: pointer; }
+    input[type="color"] { width: 48px; height: 38px; padding: 3px; border: 1px solid #929e7938; border-radius: 3px; background: #18211b; }
+    .custom-color { display: flex; align-items: center; justify-content: space-between; min-height: 46px; margin-top: 7px; color: #d4d8c6; font-size: 12px; }
+    .clips-empty { padding: 13px 12px; border: 1px dashed #89927755; color: #aeb69a; font-size: 11px; line-height: 1.55; }
+    .clip-list { display: grid; gap: 8px; }
+    .clip {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 7px;
+      padding: 8px;
+      border: 1px solid #89927744;
+      background: #18211b;
+    }
+    .clip-name { min-width: 0; overflow: hidden; color: #d9deca; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .clip-link, .clip-remove {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 40px;
+      padding: 0 9px;
+      border: 1px solid #929e7938;
+      border-radius: 2px;
+      background: #202a22;
+      color: #e1e4d0;
+      font-size: 10px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .clip-remove { color: #e7aaa0; }
+    .panel-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 51px;
+      padding: 5px 21px;
+      border-top: 1px solid #94a08130;
+      color: #aab196;
+      font-size: 10px;
+      letter-spacing: .08em;
+    }
+    .return-button { min-height: 42px; padding: 0 4px; border: 0; background: transparent; color: #e4e3c7; cursor: pointer; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes panel-in { from { transform: translateX(24px); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
+    @media (max-width: 520px) {
+      .panel { width: 100%; border-left: 0; }
+      .panel-scroll { padding-right: 17px; padding-left: 17px; }
+      .panel-head, .panel-foot { padding-right: 17px; padding-left: 17px; }
+      .menu-trigger { min-width: 76px; min-height: 44px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="optic" aria-label="Live camera optic">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="opticCanvas" width="1280" height="720" tabindex="-1" aria-label="Live Raspberry Pi camera feed with optic overlays. Tap the image or press M for the menu."></canvas>
+    </div>
+    <button class="menu-trigger" id="menuButton" type="button" aria-haspopup="dialog" aria-expanded="false">MENU</button>
+    <div class="alert" id="cameraAlert" role="alert" aria-live="assertive" hidden>
+      <span class="alert-kicker">Camera feed interrupted</span>
+      <h1>LIVE IMAGE UNAVAILABLE</h1>
+      <p id="cameraErrorText">Waiting for a frame from the Raspberry Pi camera.</p>
+      <button id="dismissAlert" type="button" aria-label="Dismiss camera alert">×</button>
+    </div>
+    <div class="scrim" id="menuScrim" hidden>
+      <section class="panel" id="menuPanel" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+        <header class="panel-head">
+          <div><div class="section-kicker">Optic / control</div><h2 id="menuTitle">Field menu</h2></div>
+          <button class="close-button" id="closeMenu" type="button" aria-label="Close menu">×</button>
+        </header>
+        <div class="panel-scroll" id="panelScroll">
+          <section class="menu-section" aria-labelledby="opsTitle">
+            <h3 class="section-kicker" id="opsTitle">Capture</h3>
+            <div class="action-grid">
+              <button class="action" id="recordButton" type="button"><span class="action-icon" aria-hidden="true">●</span><span id="recordLabel">Record clip</span></button>
+              <button class="action" id="snapshotButton" type="button"><span class="action-icon" aria-hidden="true">▣</span>Snapshot PNG</button>
+              <button class="action" id="fullscreenButton" type="button"><span class="action-icon" aria-hidden="true">□</span>Fullscreen</button>
+              <button class="action" id="returnButton" type="button">Return to optic</button>
+            </div>
+            <p class="fine-print">Clips are recorded in this browser, not saved to the Pi. Maximum recording length: 2 minutes. Download saved clips before refreshing; they are not retained after this page closes.</p>
+            <div class="notice" id="recordingNotice" hidden></div>
+            <div class="notice error" id="menuError" role="alert" hidden></div>
+            <div class="notice" id="modeNotice">Checking camera mode…</div>
+            <div class="notice" id="sensorNotice">Sensor data is not connected. Compass and battery indicators appear only when real values are available.</div>
+            <div class="notice" id="storageNotice" hidden></div>
+          </section>
+
+          <section class="menu-section" aria-labelledby="displayTitle">
+            <h3 class="section-kicker" id="displayTitle">Display</h3>
+            <fieldset>
+              <legend>Reticle style</legend>
+              <div class="choices reticles" id="reticleChoices">
+                <button class="choice" type="button" data-style="crosshair">Simple crosshair</button>
+                <button class="choice" type="button" data-style="mil-dot">Mil-dot</button>
+                <button class="choice" type="button" data-style="german-4">German #4</button>
+                <button class="choice" type="button" data-style="dot">Center dot</button>
+                <button class="choice" type="button" data-style="ring">Ring</button>
+              </div>
+            </fieldset>
+            <fieldset class="setting-row" style="margin-top:20px">
+              <legend>Reticle color</legend>
+              <div class="color-choices" id="colorChoices">
+                <button class="choice color-choice" type="button" data-color="#f3b23f" aria-label="Amber reticle"><span class="swatch" style="background:#f3b23f"></span>Amber</button>
+                <button class="choice color-choice" type="button" data-color="#5cff9a" aria-label="Green reticle"><span class="swatch" style="background:#5cff9a"></span>Green</button>
+                <button class="choice color-choice" type="button" data-color="#ff4b3a" aria-label="Red reticle"><span class="swatch" style="background:#ff4b3a"></span>Red</button>
+                <button class="choice color-choice" type="button" data-color="#ffffff" aria-label="White reticle"><span class="swatch" style="background:#fff"></span>White</button>
+              </div>
+              <label class="custom-color">Custom color <input id="customColor" type="color" aria-label="Custom reticle color"></label>
+            </fieldset>
+            <div class="setting-row" style="display:block;margin-top:18px">
+              <label class="setting-label" for="brightnessInput">Reticle brightness <span id="brightnessValue">80%</span></label>
+              <input id="brightnessInput" type="range" min="10" max="100" step="5" value="80">
+            </div>
+            <fieldset style="margin-top:17px">
+              <legend>Digital zoom</legend>
+              <div class="choices" id="zoomChoices">
+                <button class="choice" type="button" data-zoom="1">1×</button>
+                <button class="choice" type="button" data-zoom="2">2×</button>
+                <button class="choice" type="button" data-zoom="4">4×</button>
+              </div>
+            </fieldset>
+            <fieldset style="margin-top:20px">
+              <legend>Image palette</legend>
+              <div class="choices" id="paletteChoices">
+                <button class="choice" type="button" data-palette="moonlight">Moonlight</button>
+                <button class="choice" type="button" data-palette="phosphor">Phosphor</button>
+                <button class="choice" type="button" data-palette="ember">Ember</button>
+              </div>
+            </fieldset>
+            <label class="setting-row" for="compassToggle" style="margin-top:15px">Compass ribbon
+              <span class="switch"><input id="compassToggle" type="checkbox"><span class="switch-track"></span></span>
+            </label>
+            <label class="setting-row" for="batteryToggle">Battery indicator
+              <span class="switch"><input id="batteryToggle" type="checkbox"><span class="switch-track"></span></span>
+            </label>
+            <p class="fine-print">Display options save in this browser when local storage is available.</p>
+          </section>
+
+          <section class="menu-section" aria-labelledby="clipsTitle">
+            <h3 class="section-kicker" id="clipsTitle">Saved clips · this session</h3>
+            <div class="clips-empty" id="clipsEmpty">No saved clips yet. Recordings will appear here for download or discard.</div>
+            <div class="clip-list" id="clipList"></div>
+          </section>
+        </div>
+        <footer class="panel-foot"><span>1 / 2 / 4 ZOOM</span><span>R RECORD</span><button class="return-button" id="footerReturn" type="button">RETURN</button></footer>
+      </section>
+    </div>
+    <p class="visually-hidden" id="liveStatus" role="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+      const W = 1280;
+      const H = 720;
+      const FRAME_URL = "/camera/frame";
+      const STATUS_URL = "/api/status";
+      const STORAGE_KEY = "barnscope-pi-display-v1";
+      const MAX_RECORD_MS = 120000;
+      const canvas = document.getElementById("opticCanvas");
+      const ctx = canvas.getContext("2d", { alpha: false });
+      const wrap = document.querySelector(".optic");
+      const menuButton = document.getElementById("menuButton");
+      const scrim = document.getElementById("menuScrim");
+      const panel = document.getElementById("menuPanel");
+      const closeButton = document.getElementById("closeMenu");
+      const cameraAlert = document.getElementById("cameraAlert");
+      const cameraErrorText = document.getElementById("cameraErrorText");
+      const menuError = document.getElementById("menuError");
+      const recordingNotice = document.getElementById("recordingNotice");
+      const storageNotice = document.getElementById("storageNotice");
+      const liveStatus = document.getElementById("liveStatus");
+      const clipList = document.getElementById("clipList");
+      const clipsEmpty = document.getElementById("clipsEmpty");
+      const recordButton = document.getElementById("recordButton");
+      const recordLabel = document.getElementById("recordLabel");
+
+      const defaults = {
+        zoom: 1,
+        reticleStyle: "crosshair",
+        reticleColor: "#f3b23f",
+        reticleBrightness: 80,
+        showCompass: true,
+        showBattery: true,
+        palette: "moonlight"
+      };
+      const validStyles = ["crosshair", "mil-dot", "german-4", "dot", "ring"];
+      const validPalettes = ["moonlight", "phosphor", "ember"];
+      const safeColor = (value) => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+      function loadSettings() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return { ...defaults };
+          const parsed = JSON.parse(raw);
+          return {
+            zoom: [1, 2, 4].includes(parsed.zoom) ? parsed.zoom : defaults.zoom,
+            reticleStyle: validStyles.includes(parsed.reticleStyle) ? parsed.reticleStyle : defaults.reticleStyle,
+            reticleColor: safeColor(parsed.reticleColor) ? parsed.reticleColor : defaults.reticleColor,
+            reticleBrightness: Number.isFinite(parsed.reticleBrightness) ? Math.min(100, Math.max(10, Math.round(parsed.reticleBrightness / 5) * 5)) : defaults.reticleBrightness,
+            showCompass: typeof parsed.showCompass === "boolean" ? parsed.showCompass : defaults.showCompass,
+            showBattery: typeof parsed.showBattery === "boolean" ? parsed.showBattery : defaults.showBattery,
+            palette: validPalettes.includes(parsed.palette) ? parsed.palette : defaults.palette
+          };
+        } catch (_) {
+          storageNotice.hidden = false;
+          storageNotice.textContent = "Display options could not be read from browser storage. Changes will apply for this visit only.";
+          return { ...defaults };
+        }
+      }
+      let settings = loadSettings();
+      let camera = { available: false, width: 0, height: 0, fps: 0, last_frame_age: null };
+      let telemetryAvailable = false;
+      let heading = null;
+      let battery = null;
+      let frameBitmap = null;
+      let imageFallback = null;
+      let hudImage = null;
+      let hudRequest = 0;
+      let feedReady = false;
+      let lastFrameAt = 0;
+      let feedError = "Waiting for the first camera frame.";
+      let menuOpen = false;
+      let recording = null;
+      let clips = [];
+      let frameFailureCount = 0;
+      let statusFailure = "";
+      let dismissedAlert = false;
+      let renderFrame = 0;
+
+      function persistSettings() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+          if (storageNotice.textContent.startsWith("Display options could not be saved")) storageNotice.hidden = true;
+        } catch (_) {
+          storageNotice.hidden = false;
+          storageNotice.textContent = "Display options could not be saved. Browser storage may be disabled or full; changes remain active until this page closes.";
+        }
+      }
+      function updateSetting(key, value) {
+        settings = { ...settings, [key]: value };
+        persistSettings();
+        syncControls();
+        refreshHud();
+      }
+      function refreshHud() {
+        const request = ++hudRequest;
+        const params = new URLSearchParams({
+          zoom: settings.zoom, reticleStyle: settings.reticleStyle,
+          reticleColor: settings.reticleColor, reticleBrightness: settings.reticleBrightness,
+          showCompass: settings.showCompass, showBattery: settings.showBattery,
+          recording: Boolean(recording)
+        });
+        const image = new Image();
+        image.onload = () => {
+          if (request !== hudRequest) return;
+          hudImage = image;
+          syncRecordButton();
+          if (menuError.textContent.startsWith("HUD overlay unavailable")) setMenuError("");
+        };
+        image.onerror = () => {
+          if (request !== hudRequest) return;
+          hudImage = null;
+          syncRecordButton();
+          setMenuError("HUD overlay unavailable. Check the server; camera imagery is shown without optic indicators.");
+          liveStatus.textContent = "HUD overlay unavailable.";
+        };
+        image.src = "/hud.svg?" + params.toString();
+      }
+      function syncControls() {
+        document.querySelectorAll("[data-style]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.style === settings.reticleStyle)));
+        document.querySelectorAll("[data-zoom]").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.zoom) === settings.zoom)));
+        document.querySelectorAll("[data-palette]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.palette === settings.palette)));
+        document.querySelectorAll("[data-color]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.color.toLowerCase() === settings.reticleColor.toLowerCase())));
+        document.getElementById("customColor").value = settings.reticleColor;
+        document.getElementById("brightnessInput").value = String(settings.reticleBrightness);
+        document.getElementById("brightnessValue").textContent = settings.reticleBrightness + "%";
+        document.getElementById("compassToggle").checked = settings.showCompass;
+        document.getElementById("batteryToggle").checked = settings.showBattery;
+      }
+
+      function setMenuError(message) {
+        menuError.textContent = message;
+        menuError.hidden = !message;
+      }
+      function draw() {
+        if (feedReady && performance.now() - lastFrameAt > 3000) {
+          markFeedFailure("No new camera frame received for 3 seconds.");
+        }
+        ctx.fillStyle = "#050706";
+        ctx.fillRect(0, 0, W, H);
+        if (feedReady && (frameBitmap || imageFallback)) {
+          const source = frameBitmap || imageFallback;
+          const sw = source.width || source.naturalWidth;
+          const sh = source.height || source.naturalHeight;
+          if (sw > 0 && sh > 0) {
+            const cropW = sw / settings.zoom;
+            const cropH = sh / settings.zoom;
+            try {
+              ctx.imageSmoothingEnabled = settings.zoom < 4;
+              ctx.drawImage(source, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, W, H);
+              applyPalette();
+            } catch (error) {
+              markFeedFailure("Could not render the camera frame: " + error.message);
+            }
+          }
+        }
+        // Compositing is the only coupling: the same transparent HUD image is
+        // drawn above either camera provider and captured in browser recordings.
+        if (hudImage) ctx.drawImage(hudImage, 0, 0, W, H);
+        renderFrame = requestAnimationFrame(draw);
+      }
+      function applyPalette() {
+        if (settings.palette === "moonlight") return;
+        ctx.save();
+        ctx.globalCompositeOperation = "saturation";
+        ctx.fillStyle = "#808080";
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = "multiply";
+        ctx.fillStyle = settings.palette === "phosphor" ? "#5cff9a" : "#ff9a4a";
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = "rgba(40,40,40,1)";
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+      function updateCameraAlert() {
+        const show = !feedReady && !dismissedAlert;
+        cameraAlert.hidden = !show;
+        cameraErrorText.textContent = feedError;
+      }
+      function stopBrokenRecording() {
+        if (recording && recording.recorder.state !== "inactive") {
+          recording.failureReason = "Camera feed interrupted. The partial clip was preserved; download it from Saved clips.";
+          try { recording.recorder.stop(); } catch (_) { recording = null; syncRecordButton(); }
+          setMenuError("Recording stopped because the live camera feed failed. The partial clip will be kept for download.");
+        }
+      }
+      function markFeedFailure(message) {
+        const wasReady = feedReady;
+        feedReady = false;
+        feedError = message || "The camera did not return a usable frame.";
+        frameFailureCount++;
+        if (frameBitmap && typeof frameBitmap.close === "function") frameBitmap.close();
+        frameBitmap = null;
+        imageFallback = null;
+        stopBrokenRecording();
+        if (wasReady) syncRecordButton();
+        updateCameraAlert();
+        liveStatus.textContent = "Camera feed unavailable. " + feedError;
+      }
+      async function loadImageFallback(blob) {
+        const url = URL.createObjectURL(blob);
+        try {
+          const image = new Image();
+          await new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = () => reject(new Error("The browser could not decode the camera JPEG."));
+            image.src = url;
+          });
+          imageFallback = image;
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+      async function fetchFrame() {
+        const started = performance.now();
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 3000);
+        try {
+          const response = await fetch(FRAME_URL, { cache: "no-store", signal: controller.signal });
+          if (!response.ok) throw new Error(response.status === 503 ? "Camera unavailable (HTTP 503). Check the selected camera source." : "Camera request failed (HTTP " + response.status + ").");
+          const blob = await response.blob();
+          if (!blob.size) throw new Error("Camera returned an empty image.");
+          let nextBitmap = null;
+          if (typeof createImageBitmap === "function") {
+            try { nextBitmap = await createImageBitmap(blob); } catch (_) { nextBitmap = null; }
+          }
+          if (nextBitmap) {
+            if (frameBitmap && typeof frameBitmap.close === "function") frameBitmap.close();
+            frameBitmap = nextBitmap;
+            imageFallback = null;
+          } else {
+            await loadImageFallback(blob);
+            if (frameBitmap && typeof frameBitmap.close === "function") frameBitmap.close();
+            frameBitmap = null;
+          }
+          const recovered = !feedReady;
+          feedReady = true;
+          lastFrameAt = performance.now();
+          feedError = "";
+          frameFailureCount = 0;
+          dismissedAlert = false;
+          cameraAlert.hidden = true;
+          if (recovered) {
+            syncRecordButton();
+            if (menuError.textContent.startsWith("Camera feed interrupted.")) {
+              setMenuError("Camera feed restored. Your previous partial clip remains available in Saved clips.");
+            }
+          }
+          liveStatus.textContent = "Live camera frame received.";
+        } catch (error) {
+          markFeedFailure(error && error.message ? error.message : "Could not fetch a camera frame.");
+        } finally {
+          window.clearTimeout(timeout);
+          const wait = Math.max(0, 100 - (performance.now() - started));
+          window.setTimeout(fetchFrame, wait);
+        }
+      }
+      async function pollStatus() {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 3000);
+        try {
+          const response = await fetch(STATUS_URL, { cache: "no-store", signal: controller.signal });
+          if (!response.ok) throw new Error("Status request failed (HTTP " + response.status + ").");
+          const data = await response.json();
+          const c = data && data.camera;
+          if (!c || typeof c !== "object") throw new Error("Status response has no camera object.");
+          camera = {
+            available: c.available === true,
+            width: Number.isFinite(c.width) ? c.width : 0,
+            height: Number.isFinite(c.height) ? c.height : 0,
+            fps: Number.isFinite(c.fps) ? c.fps : 0,
+            last_frame_age: Number.isFinite(c.last_frame_age) ? c.last_frame_age : null
+          };
+          document.getElementById("modeNotice").textContent =
+            c.mode === "simulator" ? "SIMULATOR MODE — generated scenery, not a live camera." :
+            c.mode === "pi" ? "PI CAMERA MODE — live CSI camera." :
+            "Unknown camera mode. Check the server configuration.";
+          telemetryAvailable = data.telemetry_available === true;
+          heading = telemetryAvailable && Number.isFinite(data.heading) ? ((data.heading % 360) + 360) % 360 : null;
+          battery = telemetryAvailable && Number.isFinite(data.battery) ? Math.min(100, Math.max(0, data.battery)) : null;
+          statusFailure = "";
+          refreshHud();
+          document.getElementById("sensorNotice").textContent = telemetryAvailable
+            ? "Telemetry connected. Compass and battery are shown only when their reported values are available."
+            : "Sensors are not connected. Compass and battery values are unavailable; no readings are simulated.";
+          if (!camera.available && !feedReady) {
+            feedError = "The Pi reports that its camera is unavailable.";
+            updateCameraAlert();
+          }
+        } catch (error) {
+          heading = null;
+          battery = null;
+          telemetryAvailable = false;
+          statusFailure = error.message || "Status service unavailable.";
+          document.getElementById("modeNotice").textContent = "Camera mode unavailable.";
+          refreshHud();
+          document.getElementById("sensorNotice").textContent = "Sensor status unavailable: " + statusFailure + " No compass or battery reading will be invented.";
+        } finally {
+          window.clearTimeout(timeout);
+          window.setTimeout(pollStatus, 2000);
+        }
+      }
+
+      function supportedRecorderMime() {
+        if (typeof MediaRecorder === "undefined") return "";
+        const types = ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/webm", "video/mp4"];
+        return types.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+      }
+      function syncRecordButton() {
+        const isRecording = Boolean(recording);
+        recordLabel.textContent = isRecording ? "Stop recording" : "Record clip";
+        recordButton.classList.toggle("recording", isRecording);
+        recordButton.setAttribute("aria-pressed", String(isRecording));
+        const supported = !!(typeof canvas.captureStream === "function" && supportedRecorderMime());
+        recordButton.disabled = !isRecording && (!feedReady || !hudImage || !supported);
+        if (!supported && !isRecording) {
+          recordingNotice.hidden = false;
+          recordingNotice.textContent = "Recording is not supported by this browser. Snapshot and fullscreen remain available.";
+        } else if (!isRecording) {
+          recordingNotice.hidden = false;
+          recordingNotice.textContent = "Recording is available only while a real camera frame is live. The browser stops at 2 minutes.";
+        }
+      }
+      function renderClips() {
+        clipsEmpty.hidden = clips.length > 0;
+        clipList.replaceChildren();
+        clips.forEach((clip) => {
+          const row = document.createElement("div");
+          row.className = "clip";
+          const name = document.createElement("span");
+          name.className = "clip-name";
+          name.textContent = clip.name;
+          const download = document.createElement("a");
+          download.className = "clip-link";
+          download.href = clip.url;
+          download.download = clip.name;
+          download.textContent = "Download";
+          const remove = document.createElement("button");
+          remove.className = "clip-remove";
+          remove.type = "button";
+          remove.textContent = "Discard";
+          remove.setAttribute("aria-label", "Discard " + clip.name);
+          remove.addEventListener("click", () => {
+            URL.revokeObjectURL(clip.url);
+            clips = clips.filter((item) => item.id !== clip.id);
+            renderClips();
+          });
+          row.append(name, download, remove);
+          clipList.append(row);
+        });
+      }
+      function startRecording() {
+        if (!feedReady || !hudImage) { setMenuError("Cannot record: camera image or HUD overlay is unavailable."); return; }
+        const mimeType = supportedRecorderMime();
+        if (!mimeType || typeof canvas.captureStream !== "function") {
+          setMenuError("Recording is unavailable because this browser does not support canvas capture or a supported video codec.");
+          syncRecordButton();
+          return;
+        }
+        let stream = null;
+        try {
+          stream = canvas.captureStream(10);
+          const recorder = new MediaRecorder(stream, { mimeType });
+          const current = { recorder, stream, startedAt: performance.now(), chunks: [], discardOnStop: false, timer: 0 };
+          recording = current;
+          refreshHud();
+          recorder.ondataavailable = (event) => { if (event.data && event.data.size) current.chunks.push(event.data); };
+          recorder.onerror = () => {
+            current.discardOnStop = true;
+            setMenuError("The browser recorder reported an error. The recording was discarded.");
+            if (recorder.state !== "inactive") recorder.stop();
+          };
+          recorder.onstop = () => {
+            window.clearTimeout(current.timer);
+            current.stream.getTracks().forEach((track) => track.stop());
+            const elapsed = performance.now() - current.startedAt;
+            if (!current.discardOnStop && current.chunks.length) {
+              const blob = new Blob(current.chunks, { type: mimeType });
+              const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+              const extension = mimeType.includes("mp4") ? ".mp4" : ".webm";
+              clips.unshift({ id: stamp + "-" + Math.random().toString(36).slice(2), name: "barnscope-" + stamp + extension, url: URL.createObjectURL(blob), size: blob.size, elapsed });
+              renderClips();
+              liveStatus.textContent = "Recording saved in this browser session.";
+              setMenuError(current.failureReason || "");
+            } else if (!current.discardOnStop) {
+              setMenuError("No video data was produced by the browser recorder.");
+            }
+            if (recording === current) recording = null;
+            syncRecordButton();
+            refreshHud();
+          };
+          recorder.start(1000);
+          current.timer = window.setTimeout(() => {
+            if (recording === current && recorder.state !== "inactive") {
+              recordingNotice.hidden = false;
+              recordingNotice.textContent = "The 2-minute browser recording limit was reached. Recording stopped; download the saved clip below.";
+              recorder.stop();
+            }
+          }, MAX_RECORD_MS);
+          setMenuError("");
+          recordingNotice.hidden = false;
+          recordingNotice.textContent = "Recording in this browser. It will stop automatically at 2 minutes.";
+          syncRecordButton();
+        } catch (error) {
+          if (stream) stream.getTracks().forEach((track) => track.stop());
+          recording = null;
+          refreshHud();
+          setMenuError("Could not start browser recording: " + (error.message || "unsupported recorder configuration."));
+          syncRecordButton();
+        }
+      }
+      function stopRecording() {
+        if (!recording) return;
+        if (recording.recorder.state !== "inactive") recording.recorder.stop();
+      }
+      function toggleRecording() {
+        if (recording) stopRecording();
+        else startRecording();
+      }
+      function snapshot() {
+        if (!feedReady || !hudImage) { setMenuError("Snapshot unavailable: camera image or HUD overlay is unavailable."); return; }
+        canvas.toBlob((blob) => {
+          if (!blob) { setMenuError("Snapshot failed: the browser returned no PNG image."); return; }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "barnscope-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
+          link.click();
+          window.setTimeout(() => URL.revokeObjectURL(url), 3000);
+          setMenuError("");
+          liveStatus.textContent = "PNG snapshot downloaded.";
+        }, "image/png");
+      }
+      async function toggleFullscreen() {
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+          else await wrap.requestFullscreen();
+        } catch (error) {
+          setMenuError("Fullscreen is unavailable or was blocked: " + (error.message || "request denied."));
+        }
+      }
+      function openMenu() {
+        if (menuOpen) return;
+        menuOpen = true;
+        scrim.hidden = false;
+        menuButton.setAttribute("aria-expanded", "true");
+        syncRecordButton();
+        requestAnimationFrame(() => closeButton.focus());
+      }
+      function closeMenu() {
+        if (!menuOpen) return;
+        menuOpen = false;
+        scrim.hidden = true;
+        menuButton.setAttribute("aria-expanded", "false");
+        canvas.focus({ preventScroll: true });
+      }
+      function trapFocus(event) {
+        if (event.key !== "Tab") return;
+        const items = panel.querySelectorAll("button:not(:disabled), a[href], input:not(:disabled)");
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+
+      function dispatchAction(action) {
+        const zooms = [1, 2, 4];
+        const colors = ["#f3b23f", "#5cff9a", "#ff4b3a", "#ffffff"];
+        switch (action) {
+          case "MENU": menuOpen ? closeMenu() : openMenu(); break;
+          case "RECORD": toggleRecording(); break;
+          case "SNAPSHOT": snapshot(); break;
+          case "FULLSCREEN": toggleFullscreen(); break;
+          case "ZOOM_1": case "ZOOM_2": case "ZOOM_4": updateSetting("zoom", Number(action.slice(-1))); break;
+          case "ZOOM_IN": updateSetting("zoom", zooms[Math.min(2, zooms.indexOf(settings.zoom) + 1)]); break;
+          case "ZOOM_OUT": updateSetting("zoom", zooms[Math.max(0, zooms.indexOf(settings.zoom) - 1)]); break;
+          case "RETICLE_NEXT": updateSetting("reticleStyle", validStyles[(validStyles.indexOf(settings.reticleStyle) + 1) % validStyles.length]); break;
+          case "COLOR_NEXT": updateSetting("reticleColor", colors[(colors.indexOf(settings.reticleColor) + 1) % colors.length]); break;
+          case "PALETTE_NEXT": updateSetting("palette", validPalettes[(validPalettes.indexOf(settings.palette) + 1) % validPalettes.length]); break;
+          case "BRIGHTNESS_UP": updateSetting("reticleBrightness", Math.min(100, settings.reticleBrightness + 5)); break;
+          case "BRIGHTNESS_DOWN": updateSetting("reticleBrightness", Math.max(10, settings.reticleBrightness - 5)); break;
+          case "COMPASS_TOGGLE": updateSetting("showCompass", !settings.showCompass); break;
+          case "BATTERY_TOGGLE": updateSetting("showBattery", !settings.showBattery); break;
+          default: setMenuError("Unsupported control action: " + String(action));
+        }
+      }
+      let controlCursor = 0;
+      async function pollControls() {
+        try {
+          const response = await fetch("/api/controls?after=" + controlCursor, { cache: "no-store" });
+          if (!response.ok) throw new Error("GPIO control bridge HTTP " + response.status);
+          const data = await response.json();
+          if (!Array.isArray(data.events) || !Number.isInteger(data.latest)) throw new Error("Invalid GPIO control response");
+          for (const event of data.events) {
+            if (event.sequence > controlCursor && event.sequence <= data.latest) {
+              controlCursor = event.sequence;
+              dispatchAction(event.action);
+            }
+          }
+          controlCursor = Math.max(controlCursor, data.latest);
+        } catch (error) {
+          // Touch/keyboard keep working; report the lost GPIO path explicitly.
+          document.getElementById("modeNotice").textContent = "GPIO control bridge unavailable: " + error.message;
+        } finally {
+          window.setTimeout(pollControls, 250);
+        }
+      }
+
+      menuButton.addEventListener("click", () => dispatchAction("MENU"));
+      canvas.addEventListener("click", () => dispatchAction("MENU"));
+      closeButton.addEventListener("click", closeMenu);
+      document.getElementById("returnButton").addEventListener("click", closeMenu);
+      document.getElementById("footerReturn").addEventListener("click", closeMenu);
+      scrim.addEventListener("mousedown", (event) => { if (event.target === scrim) closeMenu(); });
+      panel.addEventListener("keydown", trapFocus);
+      document.getElementById("dismissAlert").addEventListener("click", () => { dismissedAlert = true; cameraAlert.hidden = true; });
+      document.getElementById("recordButton").addEventListener("click", () => dispatchAction("RECORD"));
+      document.getElementById("snapshotButton").addEventListener("click", () => dispatchAction("SNAPSHOT"));
+      document.getElementById("fullscreenButton").addEventListener("click", () => dispatchAction("FULLSCREEN"));
+      document.querySelectorAll("[data-style]").forEach((b) => b.addEventListener("click", () => updateSetting("reticleStyle", b.dataset.style)));
+      document.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", () => dispatchAction("ZOOM_" + b.dataset.zoom)));
+      document.querySelectorAll("[data-color]").forEach((b) => b.addEventListener("click", () => updateSetting("reticleColor", b.dataset.color)));
+      document.querySelectorAll("[data-palette]").forEach((b) => b.addEventListener("click", () => updateSetting("palette", b.dataset.palette)));
+      document.getElementById("customColor").addEventListener("input", (event) => updateSetting("reticleColor", event.target.value));
+      document.getElementById("brightnessInput").addEventListener("input", (event) => updateSetting("reticleBrightness", Number(event.target.value)));
+      document.getElementById("compassToggle").addEventListener("change", (event) => updateSetting("showCompass", event.target.checked));
+      document.getElementById("batteryToggle").addEventListener("change", (event) => updateSetting("showBattery", event.target.checked));
+      document.addEventListener("keydown", (event) => {
+        if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+        if (event.key === "Escape") {
+          if (menuOpen) { event.preventDefault(); closeMenu(); }
+          else if (!cameraAlert.hidden) { dismissedAlert = true; cameraAlert.hidden = true; }
+          return;
+        }
+        if (event.target instanceof HTMLElement && event.target.closest("input, select, textarea, [role=dialog], [contenteditable=true]")) return;
+        const key = event.key.toLowerCase();
+        if (key === "m") { event.preventDefault(); dispatchAction("MENU"); }
+        else if (key === "1" || key === "2" || key === "4") dispatchAction("ZOOM_" + key);
+        else if (key === "r") { event.preventDefault(); dispatchAction("RECORD"); }
+      });
+      window.addEventListener("beforeunload", (event) => {
+        if (clips.length || recording) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      });
+      window.addEventListener("pagehide", () => {
+        if (recording) {
+          recording.discardOnStop = true;
+          if (recording.recorder.state !== "inactive") recording.recorder.stop();
+        }
+        if (frameBitmap && typeof frameBitmap.close === "function") frameBitmap.close();
+        clips.forEach((clip) => URL.revokeObjectURL(clip.url));
+        cancelAnimationFrame(renderFrame);
+      });
+
+      syncControls();
+      syncRecordButton();
+      refreshHud();
+      draw();
+      fetchFrame();
+      pollStatus();
+      pollControls();
+    })();
+  </script>
+</body>
+</html>
