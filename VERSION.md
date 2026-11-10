@@ -21,3 +21,16 @@ Current Features:
 
 Next Milestone:
 - Connect Pi Camera
+
+## Version 1.2
+
+### Completed
+- Raspberry Pi Zero 2 W configured
+- SSH and Raspberry Pi Connect verified
+- Pi Camera V2 NoIR connected
+- IMX219 camera detected successfully
+- First still image captured
+- First image transferred to Windows
+
+### Status
+BarnScope achieved first light.
