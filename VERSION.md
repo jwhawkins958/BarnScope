@@ -22,15 +22,35 @@ Current Features:
 Next Milestone:
 - Connect Pi Camera
 
-## Version 1.2
+# BarnScope Version 1.2
 
-### Completed
+## Achievements
+
 - Raspberry Pi Zero 2 W configured
-- SSH and Raspberry Pi Connect verified
-- Pi Camera V2 NoIR connected
+- SSH enabled and verified
+- Raspberry Pi Connect enabled
+- GitHub repository established
+- Pi Camera NoIR connected
 - IMX219 camera detected successfully
 - First still image captured
 - First image transferred to Windows
+- First live camera preview displayed
+- BarnScope simulator running on Raspberry Pi
+- BarnScope HUD rendering correctly
+- BarnScope reticle rendering correctly
+- BarnScope live camera mode operational
 
-### Status
-BarnScope achieved first light.
+## Current Hardware
+
+- Raspberry Pi Zero 2 W
+- Pi Camera V2 NoIR
+- Pi Zero camera adapter cable
+- HDMI display for development
+
+## Next Goals
+
+- Optic Mode cleanup
+- Reticle position adjustment
+- GPIO button integration
+- Battery system
+- Portable display
