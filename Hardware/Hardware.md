@@ -1,1 +1,1 @@
-
+https://www.amazon.com/3-5inch-Display-Monitor-MPI3508-Resistive/dp/B0GZP176VP/ref=sr_1_3?crid=33P48WRD6Z3CE&dib=eyJ2IjoiMSJ9.2D9LkheN3hu9rCG5PLUcRv70vNZn3J3JoXtoK2nEcj1qP2R_qyz4Jes9ExX9UAXjHvPy3BMWRYRMc4w3sslrrz2j4rbLgFf3_MqBjRAa6tAWmUTaWKBc88V42FcrC-NgFx56H8Dn26hpLuCkURyOEtHgNgcawj9NyBhCfZC0y6-qsVyjndwQ8be3shYFVJ2x_d3WH5rhcmsLCcCuSPIX0hgpPUJ5MEPzbd4AWmuB9ho.QacABvRJ2Iht3BhY5GrbuOMO7wD2Zy9soweIpOq3YL0&dib_tag=se&keywords=3.5%2Binch%2Bhdmi%2Bdisplay&qid=1794433813&sprefix=3.5%2Binchhdmi%2B%2Caps%2C128&sr=8-3&th=1
